@@ -1153,49 +1153,31 @@ function renderDotProduct() {
 
   const maxAbs = Math.max(...q.map(Math.abs), ...k.map(Math.abs), ...prods.map(Math.abs), 0.001);
 
-  const renderVec = (label, arr, color) => `
-    <div class="vec-row">
-      <div class="vec-label">${label}</div>
-      <div class="vec-bars">
-        ${arr.map(v => {
-          const h = Math.abs(v) / maxAbs * 100;
-          const top = v >= 0;
-          return `<div class="vec-cell" style="background:${top?color:'transparent'}; border:1px solid ${color}; height:${h.toFixed(0)}%; align-self:${top?'flex-end':'flex-start'}"></div>`;
-        }).join('')}
-      </div>
-      <div class="vec-val">${arr.length === 1 ? arr[0].toFixed(2) : ''}</div>
-    </div>`;
+  const BARS_H = 44;
 
   $('dp-body').innerHTML = `
     <div style="margin-bottom:8px">
       For this pair, compute <span class="hl">Q<sub>${cell.q}</sub> · K<sub>${cell.k}</sub></span> element-wise across all ${D_K} dimensions:
     </div>
     <div class="vec-trace">
-      <div class="vec-row" style="grid-template-columns: 50px 1fr 60px">
+      <div class="vec-row" style="grid-template-columns: 50px 1fr 60px; align-items:center">
         <div class="vec-label">Q vec</div>
-        <div class="vec-bars">${q.map(v => {
-          const h = Math.abs(v) / maxAbs * 100;
-          return `<div class="vec-cell" style="background:${v>=0?'var(--violet)':'transparent'}; border:1px solid var(--violet); height:${h.toFixed(0)}%; align-self:${v>=0?'flex-end':'flex-start'}" title="${v.toFixed(3)}"></div>`;
-        }).join('')}</div>
+        <div>${centeredVecBars(q, maxAbs, 'var(--violet)', 'var(--bad)', BARS_H)}</div>
         <div class="vec-val" style="color:var(--violet)"></div>
       </div>
-      <div class="vec-row">
+      <div class="vec-row" style="align-items:center">
         <div class="vec-label">K vec</div>
-        <div class="vec-bars">${k.map(v => {
-          const h = Math.abs(v) / maxAbs * 100;
-          return `<div class="vec-cell" style="background:${v>=0?'var(--accent)':'transparent'}; border:1px solid var(--accent); height:${h.toFixed(0)}%; align-self:${v>=0?'flex-end':'flex-start'}" title="${v.toFixed(3)}"></div>`;
-        }).join('')}</div>
+        <div>${centeredVecBars(k, maxAbs, 'var(--accent)', 'var(--bad)', BARS_H)}</div>
         <div class="vec-val" style="color:var(--accent)"></div>
       </div>
-      <div class="vec-row">
+      <div class="vec-row" style="align-items:center">
         <div class="vec-label">Q ⊙ K</div>
-        <div class="vec-bars">${prods.map(v => {
-          const h = Math.abs(v) / maxAbs * 100;
-          const col = v >= 0 ? 'var(--good)' : 'var(--bad)';
-          return `<div class="vec-cell" style="background:${col}; height:${h.toFixed(0)}%; align-self:${v>=0?'flex-end':'flex-start'}" title="${v.toFixed(3)}"></div>`;
-        }).join('')}</div>
+        <div>${centeredVecBars(prods, maxAbs, 'var(--good)', 'var(--bad)', BARS_H)}</div>
         <div class="vec-val" style="color:${sum>=0?'var(--good)':'var(--bad)'}">Σ = ${sum.toFixed(2)}</div>
       </div>
+    </div>
+    <div style="display:flex; gap:14px; flex-wrap:wrap; margin-top:10px; font-size:10.5px; color:var(--text-3); font-family:var(--mono)">
+      <span><span style="display:inline-block; width:14px; height:2px; background:var(--text-3); vertical-align:3px"></span> zero baseline (bars up = positive, down = negative)</span>
     </div>
     <hr>
     <div style="font-family:var(--mono); font-size:12px; line-height:1.9">
@@ -1369,7 +1351,7 @@ let pipeStep = 0;
 let pipePlayer = null;
 
 const PIPE_EXPLAIN = [
-  'Each input token is a vector x of size n_embd. These are the raw embeddings before any attention happens.',
+  'Each input token is first mapped to a learned vector — its <strong>embedding</strong> — of size n_embd. The model has a big lookup table (one row per vocabulary word), and these rows are tuned during training so that words used in similar contexts get similar vectors. Nothing here is contextual yet: "bank" in <em>river bank</em> and <em>bank account</em> still get the same vector. Attention (next stages) is what mixes them together.',
   'Three learned linear projections (W_Q, W_K, W_V) turn each x into a Query, Key, and Value vector of size d_k.',
   'Compute every pairwise dot product Q · <abbr class="sym sym-tr" title="K⊤ — transpose of matrix K (flip rows ↔ columns). The small ⊤ is the math transpose symbol, NOT the letter T and NOT temperature.">K<sup>⊤</sup></abbr>. Result is a <abbr class="sym sym-N" title="N = number of tokens (sequence length). Not temperature, not transpose.">N×N</abbr> matrix of raw alignment scores.',
   'Divide all scores by √d<sub>k</sub> so their variance is ≈ 1 — keeps softmax in a healthy regime.',
@@ -1397,15 +1379,9 @@ function renderPipeStage() {
   c.classList.remove('fade-in'); void c.offsetWidth; c.classList.add('fade-in');
 
   if (pipeStep === 0) {
-    c.innerHTML = pipeTokenStrip('input embeddings x', 'var(--text-2)', i => vec(WORDS[i], 0, 'X'));
+    c.innerHTML = pipeEmbeddingsStage();
   } else if (pipeStep === 1) {
-    c.innerHTML = `
-      ${pipeTokenStrip('Q (queries)', 'var(--violet)', i => vec(WORDS[i], head, 'Q'))}
-      <hr>
-      ${pipeTokenStrip('K (keys)', 'var(--accent)', i => vec(WORDS[i], head, 'K'))}
-      <hr>
-      ${pipeTokenStrip('V (values)', 'var(--good)', i => vec(WORDS[i], head, 'V'))}
-    `;
+    c.innerHTML = pipeQKVStage();
   } else if (pipeStep === 2 || pipeStep === 3) {
     const div = pipeStep === 3 ? Math.sqrt(D_K) : 1;
     c.innerHTML = pipeScoreRow('raw Q · <abbr class="sym sym-tr" title="K⊤ — transpose of matrix K (flip rows ↔ columns). The small ⊤ is the math transpose symbol, NOT the letter T and NOT temperature.">K<sup>⊤</sup></abbr>' + (pipeStep===3 ? ' / √d<sub>k</sub>':''),
@@ -1438,6 +1414,141 @@ function renderPipeStage() {
       ${pipeOutputBlend(w, head)}
     `;
   }
+}
+
+function pipeQKVStrip(title, color, kind, head) {
+  const vectors = WORDS.map((w, i) => vec(w, head, kind));
+  const globalMax = Math.max(...vectors.flat().map(Math.abs), 0.01);
+  const ROW_H = 64;
+  const HALF = ROW_H / 2;
+  const tokens = WORDS.map((w, i) => {
+    const v = vectors[i];
+    const cellWrap = v.map(x => {
+      const h = (Math.abs(x) / globalMax) * HALF;
+      const top = x >= 0 ? (HALF - h) : HALF;
+      return `<div style="position:relative; flex:1; min-width:3px; height:${ROW_H}px">
+        <div title="dim value = ${x.toFixed(2)}" style="position:absolute; left:0; right:0; top:${top.toFixed(1)}px; height:${h.toFixed(1)}px; background:${x>=0?color:'var(--bad)'}; opacity:${x>=0?0.9:0.7}; border-radius:1px"></div>
+      </div>`;
+    }).join('');
+    const isQ = i === queryIdx;
+    return `<div style="flex:1; min-width:54px; text-align:center; ${isQ?'box-shadow:0 0 0 2px '+color+'; border-radius:6px; padding:4px; background:rgba(255,255,255,.03)':'padding:4px'}">
+      <div style="position:relative; display:flex; gap:2px; height:${ROW_H}px; align-items:stretch; background:var(--surface-2); border-radius:4px; padding:0 2px">
+        ${cellWrap}
+        <div style="position:absolute; left:0; right:0; top:${HALF}px; height:1px; background:var(--text-3); opacity:.55; pointer-events:none"></div>
+      </div>
+      <div style="font-size:10.5px; color:var(--text-2); margin-top:6px; font-family:'Space Grotesk'; font-weight:600">${shortLabel(w,8)}</div>
+      <div style="font-size:9.5px; color:var(--text-3); font-family:var(--mono)">t=${i}${isQ?' • query':''}</div>
+    </div>`;
+  }).join('');
+  return `<div style="font-family:var(--mono); font-size:11.5px; color:${color}; text-transform:uppercase; letter-spacing:.05em; margin-bottom:6px">${title}</div>
+    <div style="display:flex; gap:6px; overflow-x:auto; padding-bottom:6px; align-items:flex-end">${tokens}</div>`;
+}
+
+function pipeQKVStage() {
+  const head = getHead();  // Get current head
+  return `
+    <div style="font-family:var(--mono); font-size:11.5px; color:var(--text-2); text-transform:uppercase; letter-spacing:.05em; margin-bottom:10px">
+      project x → Q, K, V &nbsp;∈&nbsp; ℝ<sup>${D_K}</sup> &nbsp;
+      <span style="color:var(--text-3); text-transform:none; letter-spacing:0">
+        each embedding x is multiplied by three learned matrices:
+        <span style="color:var(--violet); font-weight:600">Q=x·W<sub>Q</sub></span>,
+        <span style="color:var(--accent); font-weight:600">K=x·W<sub>K</sub></span>,
+        <span style="color:var(--good); font-weight:600">V=x·W<sub>V</sub></span>
+        — different per head.
+      </span>
+    </div>
+
+    ${pipeQKVStrip('Q (queries) — what each token is looking for', 'var(--violet)', 'Q')}
+    <hr>
+    ${pipeQKVStrip('K (keys) — what each token offers for matching', 'var(--accent)', 'K')}
+    <hr>
+    ${pipeQKVStrip('V (values) — the content each token will contribute', 'var(--good)', 'V')}
+
+    <div style="display:flex; gap:18px; flex-wrap:wrap; margin-top:10px; font-size:11px; color:var(--text-3); font-family:var(--mono)">
+      <span><span style="display:inline-block; width:10px; height:10px; background:var(--bad); border-radius:2px; vertical-align:-1px"></span> negative dim</span>
+      <span><span style="display:inline-block; width:14px; height:2px; background:var(--text-3); vertical-align:3px"></span> zero baseline</span>
+      <span style="color:var(--text-2)">→ next: score = Q · <abbr class="sym sym-tr" title="K⊤ — transpose of matrix K (flip rows ↔ columns). The small ⊤ is the math transpose symbol, NOT the letter T and NOT temperature.">K<sup>⊤</sup></abbr></span>
+    </div>
+  `;
+}
+
+// Shared helper: render a vector as bars growing from a shared horizontal
+// zero-baseline (positive → up, negative → down). Matches the Stage 0
+// embedding visualization so every per-vector display looks consistent.
+function centeredVecBars(arr, max, posColor, negColor, height) {
+  const HALF = height / 2;
+  const cells = arr.map(x => {
+    const h = (Math.abs(x) / max) * HALF;
+    const top = x >= 0 ? (HALF - h) : HALF;
+    return `<div style="position:relative; flex:1; min-width:3px; height:${height}px">
+      <div title="${x.toFixed(3)}" style="position:absolute; left:0; right:0; top:${top.toFixed(1)}px; height:${h.toFixed(1)}px; background:${x>=0?posColor:negColor}; opacity:${x>=0?0.9:0.7}; border-radius:1px"></div>
+    </div>`;
+  }).join('');
+  return `<div style="position:relative; display:flex; gap:2px; height:${height}px; align-items:stretch; background:var(--surface-2); border-radius:4px; padding:0 2px">
+    ${cells}
+    <div style="position:absolute; left:0; right:0; top:${HALF}px; height:1px; background:var(--text-3); opacity:.55; pointer-events:none"></div>
+  </div>`;
+}
+
+function pipeEmbeddingsStage() {
+  const color = 'var(--text-2)';
+  const vectors = WORDS.map((w, i) => vec(w, 0, 'X'));
+  const globalMax = Math.max(...vectors.flat().map(Math.abs), 0.01);
+  const ROW_H = 64; // px, total strip height
+  const HALF = ROW_H / 2;
+
+  const tokens = WORDS.map((w, i) => {
+    const v = vectors[i];
+    const cells = v.map(x => {
+      const h = (Math.abs(x) / globalMax) * HALF;
+      const top = x >= 0 ? (HALF - h) : HALF;
+      return `<div title="dim value = ${x.toFixed(2)}"
+        style="position:absolute; left:0; right:0; top:${top.toFixed(1)}px; height:${h.toFixed(1)}px;
+        background:${x>=0?'var(--accent)':'var(--bad)'}; border-radius:1px; opacity:.85"></div>`;
+    });
+    const cellWrap = v.map((x, d) => `
+      <div style="position:relative; flex:1; min-width:3px; height:${ROW_H}px">
+        ${cells[d]}
+      </div>`).join('');
+    const isQ = i === queryIdx;
+    return `<div style="flex:1; min-width:54px; text-align:center; ${isQ?'box-shadow:0 0 0 2px var(--accent); border-radius:6px; padding:4px; background:rgba(124,92,255,.06)':'padding:4px'}">
+      <div style="position:relative; display:flex; gap:2px; height:${ROW_H}px; align-items:stretch; background:var(--surface-2); border-radius:4px; padding:0 2px">
+        ${cellWrap}
+        <!-- zero baseline running across all dims of this token -->
+        <div style="position:absolute; left:0; right:0; top:${HALF}px; height:1px; background:var(--text-3); opacity:.55; pointer-events:none"></div>
+      </div>
+      <div style="font-size:10.5px; color:var(--text-2); margin-top:6px; font-family:'Space Grotesk'; font-weight:600">${shortLabel(WORDS[i],8)}</div>
+      <div style="font-size:9.5px; color:var(--text-3); font-family:var(--mono)">t=${i}${isQ?' • query':''}</div>
+    </div>`;
+  }).join('');
+
+  return `
+    <div style="font-family:var(--mono); font-size:11.5px; color:${color}; text-transform:uppercase; letter-spacing:.05em; margin-bottom:6px">
+      input embeddings &nbsp;x<sub>0</sub> … x<sub>${N-1}</sub> &nbsp;∈&nbsp; ℝ<sup>${D_K}</sup>
+      <span style="color:var(--text-3); text-transform:none; letter-spacing:0; margin-left:8px">(showing ${D_K} dims per token for illustration; real models use 768–12288)</span>
+    </div>
+
+    <div style="background:var(--surface-2); border:1px solid var(--border); border-radius:8px; padding:10px 12px; margin-bottom:14px; font-size:12.5px; line-height:1.55; color:var(--text-2)">
+      <strong style="color:var(--text-1)">What is an embedding?</strong>
+      A token (word / sub-word) is just an integer ID. The model can't do math on an ID, so it looks the ID up in a learned <strong>embedding table</strong> and gets back a dense vector of real numbers. Similar words end up with similar vectors (e.g. <em>king</em> and <em>queen</em> point in nearby directions).
+    </div>
+
+    <div style="background:var(--surface-2); border:1px solid var(--border); border-radius:8px; padding:10px 12px; margin-bottom:14px; font-size:12.5px; line-height:1.55; color:var(--text-2)">
+      <strong style="color:var(--text-1)">What this visualization shows.</strong>
+      Each column below is one token. Inside each column, the ${D_K} vertical bars are the ${D_K} dimensions of that token's embedding vector. A bar <span style="color:var(--accent); font-weight:600">going up</span> from the gray center line = positive value in that dimension; a bar <span style="color:var(--bad); font-weight:600">going down</span> = negative value. Taller bar = larger magnitude. The highlighted column is the current <strong>query</strong> token.
+    </div>
+
+    <div style="display:flex; gap:6px; overflow-x:auto; padding-bottom:6px; align-items:flex-end">
+      ${tokens}
+    </div>
+
+    <div style="display:flex; gap:18px; flex-wrap:wrap; margin-top:10px; font-size:11px; color:var(--text-3); font-family:var(--mono)">
+      <span><span style="display:inline-block; width:10px; height:10px; background:var(--accent); border-radius:2px; vertical-align:-1px"></span> positive dim</span>
+      <span><span style="display:inline-block; width:10px; height:10px; background:var(--bad); border-radius:2px; vertical-align:-1px"></span> negative dim</span>
+      <span><span style="display:inline-block; width:14px; height:2px; background:var(--text-3); vertical-align:3px"></span> zero baseline (shared across tokens)</span>
+      <span style="color:var(--text-2)">→ no context yet — next stage projects each x into Q, K, V.</span>
+    </div>
+  `;
 }
 
 function pipeTokenStrip(title, color, vecFn) {
@@ -1495,11 +1606,11 @@ function pipeOutputBlend(weights, head) {
   for (let j = 0; j <= queryIdx; j++) for (let d = 0; d < D_K; d++) out[d] += weights[j] * Vs[j][d];
   const max = Math.max(...out.map(Math.abs), 0.01);
   return `<div style="font-family:var(--mono); font-size:11.5px; color:var(--good); text-transform:uppercase; letter-spacing:.05em; margin-bottom:8px">output vector (d=${D_K})</div>
-    <div style="display:flex; gap:3px; height:48px; align-items:stretch; padding: 6px; background:var(--surface-2); border-radius:6px">
-      ${out.map(v => {
-        const h = Math.abs(v) / max * 100;
-        return `<div style="flex:1; height:${h.toFixed(0)}%; background:${v>=0?'var(--good)':'var(--bad)'}; border-radius:2px; align-self:${v>=0?'flex-end':'flex-start'}" title="${v.toFixed(3)}"></div>`;
-      }).join('')}
+    ${centeredVecBars(out, max, 'var(--good)', 'var(--bad)', 56)}
+    <div style="display:flex; gap:14px; flex-wrap:wrap; margin-top:8px; font-size:10.5px; color:var(--text-3); font-family:var(--mono)">
+      <span><span style="display:inline-block; width:10px; height:10px; background:var(--good); border-radius:2px; vertical-align:-1px"></span> positive dim</span>
+      <span><span style="display:inline-block; width:10px; height:10px; background:var(--bad); border-radius:2px; vertical-align:-1px"></span> negative dim</span>
+      <span><span style="display:inline-block; width:14px; height:2px; background:var(--text-3); vertical-align:3px"></span> zero baseline</span>
     </div>
     <div style="font-size:11px; color:var(--text-3); margin-top:8px; font-family:var(--mono)">
       this becomes the new representation of "${WORDS[queryIdx]}" passed to the next layer
