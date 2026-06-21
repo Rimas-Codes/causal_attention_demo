@@ -1445,10 +1445,10 @@ function pipeQKVStrip(title, color, kind, head) {
 }
 
 function pipeQKVStage() {
-  const head = getHead();  // Get current head
+  const head = getHead();
   return `
     <div style="font-family:var(--mono); font-size:11.5px; color:var(--text-2); text-transform:uppercase; letter-spacing:.05em; margin-bottom:10px">
-      project x → Q, K, V &nbsp;∈&nbsp; ℝ<sup>${D_K}</sup> &nbsp;
+      project x → Q, K, V &nbsp;∈&nbsp; ℝ<sup>${D_K}</sup>
       <span style="color:var(--text-3); text-transform:none; letter-spacing:0">
         each embedding x is multiplied by three learned matrices:
         <span style="color:var(--violet); font-weight:600">Q=x·W<sub>Q</sub></span>,
@@ -1458,16 +1458,38 @@ function pipeQKVStage() {
       </span>
     </div>
 
-    ${pipeQKVStrip('Q (queries) — what each token is looking for', 'var(--violet)', 'Q')}
+    <!-- NEW: two inset explanation boxes, matching Stage 0's style -->
+    <div style="background:var(--surface-2); border:1px solid var(--border); border-radius:8px; padding:10px 12px; margin-bottom:10px; font-size:12.5px; line-height:1.6; color:var(--text-2)">
+      <strong style="color:var(--text)">Where do W<sub>Q</sub>, W<sub>K</sub>, W<sub>V</sub> come from?</strong>
+      In nanoGPT these three matrices are packed into a single <code style="font-family:var(--mono); background:var(--surface-3); padding:1px 5px; border-radius:3px">c_attn</code>
+      linear layer of shape <code style="font-family:var(--mono); background:var(--surface-3); padding:1px 5px; border-radius:3px">[n_embd → 3·n_embd]</code>, then split.
+      They start as random values and are <strong>learned end-to-end</strong> by gradient descent on the language-modelling loss —
+      no human designed what they encode. For GPT-2: n_embd = 768, 12 heads, so each head gets a
+      <code style="font-family:var(--mono); background:var(--surface-3); padding:1px 5px; border-radius:3px">[768 × 64]</code> slice for each of Q, K, V.
+    </div>
+
+    <div style="background:var(--surface-2); border:1px solid var(--border); border-radius:8px; padding:10px 12px; margin-bottom:14px; font-size:12.5px; line-height:1.6; color:var(--text-2)">
+      <strong style="color:var(--text)">Why three separate projections?</strong>
+      <div style="margin-top:6px; display:flex; flex-direction:column; gap:5px">
+        <div><span style="color:var(--violet); font-weight:600; font-family:var(--mono); margin-right:6px">Q</span><em>"What am I looking for?"</em> — projects the <strong>current token's</strong> embedding into a search direction. Gradient pushes W<sub>Q</sub> so that tokens seeking similar context point in the same direction in key-space.</div>
+        <div><span style="color:var(--accent); font-weight:600; font-family:var(--mono); margin-right:6px">K</span><em>"What do I advertise?"</em> — projects each <strong>past token</strong> into a findable index. W<sub>K</sub> learns to make the right tokens easy to retrieve by the right queries. Crucially, a token's key can differ from its query — it can be easy to find without searching for anything specific.</div>
+        <div><span style="color:var(--good); font-weight:600; font-family:var(--mono); margin-right:6px">V</span><em>"What content do I contribute?"</em> — Q and K only decide <em>how much weight</em> each token receives. W<sub>V</sub> decides <em>what information</em> that weight multiplies. A token can broadcast rich content even if its key is unremarkable.</div>
+      </div>
+      <div style="margin-top:8px; font-size:11.5px; color:var(--text-3); border-top:1px solid var(--border); padding-top:6px">
+        The highlighted column below is the <strong style="color:var(--accent)">query token (t=${queryIdx})</strong> — its Q vector goes into the next stage as the "search probe" matched against every K.
+      </div>
+    </div>
+
+    ${pipeQKVStrip('Q (queries) — what each token is looking for', 'var(--violet)', 'Q', head)}
     <hr>
-    ${pipeQKVStrip('K (keys) — what each token offers for matching', 'var(--accent)', 'K')}
+    ${pipeQKVStrip('K (keys) — what each token advertises for matching', 'var(--accent)', 'K', head)}
     <hr>
-    ${pipeQKVStrip('V (values) — the content each token will contribute', 'var(--good)', 'V')}
+    ${pipeQKVStrip('V (values) — the payload each token contributes', 'var(--good)', 'V', head)}
 
     <div style="display:flex; gap:18px; flex-wrap:wrap; margin-top:10px; font-size:11px; color:var(--text-3); font-family:var(--mono)">
       <span><span style="display:inline-block; width:10px; height:10px; background:var(--bad); border-radius:2px; vertical-align:-1px"></span> negative dim</span>
       <span><span style="display:inline-block; width:14px; height:2px; background:var(--text-3); vertical-align:3px"></span> zero baseline</span>
-      <span style="color:var(--text-2)">→ next: score = Q · <abbr class="sym sym-tr" title="K⊤ — transpose of matrix K (flip rows ↔ columns). The small ⊤ is the math transpose symbol, NOT the letter T and NOT temperature.">K<sup>⊤</sup></abbr></span>
+      <span style="color:var(--text-2)">→ next: score = Q · <abbr class="sym sym-tr" title="K⊤ — transpose of matrix K">K<sup>⊤</sup></abbr> — the query token's Q probes every K</span>
     </div>
   `;
 }
